@@ -24,3 +24,11 @@ class Nav:
 
     def today(self):
         self.attr_today.click()
+
+
+class Lesson:
+    pass
+
+
+class User:
+    pass
