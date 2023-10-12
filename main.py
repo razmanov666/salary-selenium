@@ -1,5 +1,5 @@
 import os
-from service import Nav
+from service import Nav, User
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -10,7 +10,7 @@ from pprint import pprint
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
-start_time = datetime.now()
+
 load_dotenv()
 
 driver = webdriver.Firefox()
@@ -20,12 +20,13 @@ wait = WebDriverWait(driver, 10)
 lessons = {"complete": {"gr_pro": [], "group2": [], "group3": [], "group4": [], "ind50": [], "ind80": [], "OVZind50": [], "Trial": [], "add_less": []},
            "cancel": [], "unpayed": [], "uncomplete": []}
 
-
+users = {}
 today = datetime.now()
 last_month = today - timedelta(days=1)
 
 days_in_last_month = (last_month.replace(day=1) - timedelta(days=1)).day
 def login_alfa():
+    driver.get(url)
     username_input = driver.find_element(By.NAME, "LoginForm[username]")
     password_input = driver.find_element(By.NAME, "LoginForm[password]")
     submit_button = driver.find_element(By.NAME, "login-button")
@@ -33,6 +34,8 @@ def login_alfa():
     username_input.send_keys(os.getenv('EMAIL'))
     password_input.send_keys(os.getenv('PASSWORD'))
     submit_button.click()
+    wait.until(EC.title_is("Календарь | ALFACRM"))
+    wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "fc-month-button")))
 
 
 def find_lessons():
@@ -41,6 +44,7 @@ def find_lessons():
         # wait.until(EC.presence_of_element_located((By.CLASS_NAME, "fc-event")))
         for _ in driver.find_elements(By.CLASS_NAME, "fc-event.status3"):
             lesson_name = _.text
+            # pprint(users)
             _.click()
             try:
                 div_popover = driver.find_element(By.CLASS_NAME, "popover-content")
@@ -59,28 +63,19 @@ def find_lessons():
                     driver.implicitly_wait(3)
                     # print(lesson_name)
                     if div_popover.find_element(By.CLASS_NAME, "col-sm-7").text.strip().split('\n')[0] == "Индивидуальный":
-                        div_popover.find_element(By.XPATH, "/html/body/div[16]/div[2]/div[1]/div/a").click()
-                        driver.implicitly_wait(3)
-                        driver.switch_to.window(driver.window_handles[1])
-                        take_and_save_screenshot("info table lag")
-                        info_table = driver.find_element(By.CLASS_NAME, "col-lg-4")
-                        driver.execute_script("window.scrollBy(0, 500);")
-                        time_lesson = driver.find_element(By.XPATH, "/html/body/div[2]/div/div/div[2]/div[3]/div[2]/div/div/div[39]/div[2]").text[-2:]
-                        if time_lesson.isdigit():
-                            if info_table.find_elements(By.CLASS_NAME, "row")[19].text == "да":
-                                lessons["complete"][f"OVZind{time_lesson}"].append(_)
-                            else:
-                                lessons["complete"][f"ind{time_lesson}"].append(_)
+                        link_user = div_popover.find_element(By.XPATH, "/html/body/div[16]/div[2]/div[1]/div/a")
+                        id_user = link_user.get_attribute("href")[-5:]
+                        print(id_user)
+                        if id_user not in users:
+                            users[id_user] = create_new_user(id_user)
+                        current_user = users[id_user]
+                        if current_user.is_indiv():
+                            lessons["complete"][f"{'OVZ' * current_user.is_ovz()}ind{current_user.time_lesson()}"].append(_)
                         else:
                             lessons["complete"][f"add_less"].append(_)
-
-                        driver.close()
-                        driver.switch_to.window(driver.window_handles[0])
                         _.click()
                     else:
                         lessons["complete"]["Trial"].append(_)
-
-                pprint(lessons["unpayed"])
         for _ in driver.find_elements(By.CLASS_NAME, "fc-event.status1"):
             lessons["uncomplete"].append(_)
         for _ in driver.find_elements(By.CLASS_NAME, "fc-event.status2"):
@@ -91,8 +86,6 @@ def find_lessons():
 
 
 def get_nav_buttons():
-    wait.until(EC.title_is("Календарь | ALFACRM"))
-    wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "fc-month-button")))
     month_button = driver.find_element(By.CLASS_NAME, "fc-month-button")
     day_button = driver.find_element(By.CLASS_NAME, "fc-agendaDay-button")
     week_button = driver.find_element(By.CLASS_NAME, "fc-agendaWeek-button")
@@ -135,8 +128,7 @@ def show_info(les):
 def collect_month_lesson():
     go_to_first_day_of_month()
     for day in range(days_in_last_month):
-        print(float((datetime.now()-start_time).seconds))
-        response_lessons = find_lessons()
+        find_lessons()
         try:
             nav.next()
         except ElementClickInterceptedException:
@@ -144,11 +136,34 @@ def collect_month_lesson():
             nav.next()
     # for lesson in response_lessons["complete"]:
     #     print(lesson.find_element(By.CLASS_NAME, "fc-title").text)
-    show_info(response_lessons)
+    show_info(lessons)
+
+
+def create_new_user(id):
+    data = {}
+    link_user = f"https://rtschool.s20.online/teacher/1/customer/view?id={str(id)}"
+    driver.execute_script(f"window.open('{link_user}', '_blank');")
+    driver.switch_to.window(driver.window_handles[1])
+    driver.implicitly_wait(3)
+    title = driver.find_element(By.CLASS_NAME, "font-noraml.no-margins.no-padding").text.strip()
+    info_rows = driver.find_element(By.CLASS_NAME, "col-lg-4").find_elements(By.CLASS_NAME, "row")
+    for row in info_rows:
+        try:
+            data_row = row.find_elements(By.TAG_NAME, "div")
+            data[data_row[0].text.strip()] = data_row[1].text.strip()
+        except IndexError:
+            continue
+    driver.close()
+    driver.switch_to.window(driver.window_handles[0])
+    return User(id, title, link_user, data)
+
 
 
 if __name__ == "__main__":
-    driver.get(url)
     login_alfa()
+    start_time = datetime.now()
     nav = get_nav_buttons()
     collect_month_lesson()
+
+    print(float((datetime.now() - start_time).seconds))
+

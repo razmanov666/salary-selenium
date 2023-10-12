@@ -31,4 +31,25 @@ class Lesson:
 
 
 class User:
-    pass
+    def __init__(self, id, title, link_user, data):
+        self.id = id
+        self.title = title
+        self.link_user = link_user
+        self.data = data
+        print("Создан новый пользователь")
+
+    def time_lesson(self):
+        return self.data["N группы"].rstrip()[-2:]
+
+    def is_indiv(self):
+        return 1 if self.data["N группы"].rstrip()[-2:].isdigit() else 0
+
+    def is_ovz(self):
+        return 1 if self.data["ОВЗ"].strip().lower() == "да" else 0
+
+    def __str__(self):
+        return f"{self.id}\n" \
+               f"{self.title}\n" \
+               f"{self.data['Курс']}\n"
+
+
