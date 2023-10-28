@@ -1,3 +1,5 @@
 /.env
 .idea/
 /__pycache__/
+excel_test.py
+sheets_test.py
