@@ -1,4 +1,5 @@
 import os
+import re
 from service import Nav, User, Lesson
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -7,6 +8,8 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.common.exceptions import *
 from pprint import pprint
 import gspread
+import json
+import copy
 
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -14,8 +17,16 @@ from datetime import datetime, timedelta
 
 load_dotenv()
 
-
-lessons = {"complete": {"gr_pro": [],
+# payment = "gr_pro": [],
+#                         "group2": [],
+#                         "group3": [],
+#                         "group4": [],
+#                         "ind50": [],
+#                         "ind80": [],
+#                         "OVZind50": [],
+#                         "Trial": [],
+#                         "add_less": []
+baseplate_lessons = {"complete": {"gr_pro": [],
                         "group2": [],
                         "group3": [],
                         "group4": [],
@@ -29,13 +40,16 @@ lessons = {"complete": {"gr_pro": [],
            "uncomplete": [],
            "other": []}
 
+lessons = copy.deepcopy(baseplate_lessons)
+
+lessons_per_days = {}
 creds = 'credentials.json'
 client = gspread.service_account(creds)
 
-spreadsheet = client.create('salary_month')
-worksheet = spreadsheet.get_worksheet(0)
-
-spreadsheet.share("razmanov666@gmail.com", role="writer", perm_type="user")
+# spreadsheet = client.create('salary_month')
+# worksheet = spreadsheet.get_worksheet(0)
+#
+# spreadsheet.share("razmanov666@gmail.com", role="writer", perm_type="user")
 
 users = {}
 today = datetime.now()
@@ -44,6 +58,17 @@ last_month = today - timedelta(days=1)
 days_in_last_month = (last_month.replace(day=1) - timedelta(days=1)).day
 prim_rev_month = str((last_month-timedelta(days=30)).month)
 prev_month = prim_rev_month if len(prim_rev_month) == 2 else '0'+prim_rev_month
+spreadsheet = client.create(f'month{last_month.month}')
+
+
+spreadsheet.share("razmanov666@gmail.com", role="writer", perm_type="user")
+
+def try_to_click(lesson):
+    try:
+        driver.execute_script("arguments[0].click();", lesson)
+    except ElementClickInterceptedException:
+        driver.find_element(By.CSS_SELECTOR, "a.pull-right:nth-child(2)").click()
+        try_to_click(lesson)
 
 
 def login_alfa():
@@ -65,20 +90,16 @@ def find_lessons(day_in_cal):
     try:
         for current_lesson in driver.find_elements(By.CLASS_NAME, "fc-event.status3"):
             # pprint(users)
-            try:
-                current_lesson.click()
-            except ElementClickInterceptedException:
-                driver.find_element(By.CSS_SELECTOR, "a.pull-right:nth-child(2)").click()
-                current_lesson.click()
-            driver.implicitly_wait(3)
+            try_to_click(current_lesson)
+            driver.implicitly_wait(1.5)
             try:
                 div_popover = driver.find_element(By.CLASS_NAME, "popover-content")
             except NoSuchElementException:
-                current_lesson.click()
+                try_to_click(current_lesson)
                 div_popover = driver.find_element(By.CLASS_NAME, "popover-content")
             data_lesson = get_data_lesson(date, div_popover)
             lesson = Lesson(**data_lesson)
-            print(lesson)
+            # print(lesson)
             # print(type_lesson.text, time_start, time_end)
             if data_lesson["is_abon"] == "не спис":
                 lesson_path = 'lessons["unpayed"]'
@@ -90,9 +111,17 @@ def find_lessons(day_in_cal):
                 else:
                     driver.implicitly_wait(3)
                     if data_lesson["data"]["type_lesson"] == "Индивидуальный":
-                        if lesson.id not in users:
+                        with open('user_data.json', 'r', encoding="UTF-8") as f:
+                            users = json.load(f)
+                        # users[lesson.id] = create_new_user(lesson.id)
+                        # save_data_to_json(users[lesson.id])
+                        if lesson.id not in users.keys():
                             users[lesson.id] = create_new_user(lesson.id)
-                        current_user = users[lesson.id]
+                            save_data_to_json(users[lesson.id])
+                            current_user = users[lesson.id]
+
+                        else:
+                            current_user = get_current_user(lesson.id)
                         if current_user.is_indiv():
                             ovz = "OVZ"
                             lesson_path = f'lessons["complete"]["{ovz * current_user.is_ovz()}ind{current_user.time_lesson()}"]'
@@ -101,7 +130,6 @@ def find_lessons(day_in_cal):
                         current_lesson.click()
                     else:
                         lesson_path = 'lessons["complete"]["Trial"]'
-
             add_lesson(lesson_path, lesson)
         for current_lesson in driver.find_elements(By.CLASS_NAME, "fc-event.status1"):
             try:
@@ -138,12 +166,40 @@ def get_nav_buttons():
     return Nav(month_button, day_button, week_button, prev_button, next_button, today_button)
 
 
+def wait_lessons_load():
+    try:
+        wait.until(expected_conditions.presence_of_element_located((By.CLASS_NAME, "fc-content")))
+    except TimeoutException:
+        nav.next()
+        wait_lessons_load()
+
+
+def save_data_to_json(user):
+    data = {
+        user.id: {
+            'title': user.title,
+            'link': user.link,
+            'data': user.data
+        }
+    }
+
+    with open('user_data.json', 'r', encoding="UTF-8") as f:
+        existing_data = json.load(f)
+    existing_data.update(data)
+    with open('user_data.json', 'w', encoding="UTF-8") as f:
+        json.dump(existing_data, f, indent=4, ensure_ascii=False)
+    # with open('user_data.json', 'w', encoding="UTF-8") as f:
+    #     json.dump(data, f, indent=4, ensure_ascii=False)
+
+
 def go_to_first_day_of_month():
     nav.month()
     wait.until(expected_conditions.presence_of_element_located((By.CLASS_NAME, "fc-more")))
     nav.prev()
     nav.day()
-    wait.until(expected_conditions.presence_of_element_located((By.CLASS_NAME, "fc-content")))
+    # for i in range(20):
+    #     nav.next()
+    wait_lessons_load()
 
 
 def take_and_save_screenshot(screen_name):
@@ -169,31 +225,38 @@ def show_info(les):
 
 
 def collect_month_lesson():
+    global lessons_per_days, lessons
     go_to_first_day_of_month()
     # for i in range(15):
     #     nav.next()
-    for day in range(1, days_in_last_month + 1):
+    for day in range(1, days_in_last_month):
         find_lessons(day)
         driver.execute_script("window.scrollTo(0, 0);")
-        # collect_data_in_sheets(day)
+        lessons_per_days[str(day)] = lessons
+        lessons = copy.deepcopy(baseplate_lessons)
+        collect_data_in_sheets(day)
         try:
             nav.next()
-        except ElementClickInterceptedException:
+        except ElementClickInterceptedException or TimeoutException:
             driver.find_element(By.CSS_SELECTOR, "a.pull-right:nth-child(2)").click()
             nav.next()
-    # for lesson in response_lessons["complete"]:
-    #     print(lesson.find_element(By.CLASS_NAME, "fc-title").text)
+    spreadsheet.del_worksheet(spreadsheet.get_worksheet(0))
     show_info(lessons)
 
 
 def collect_data_in_sheets(day_num):
-    spreadsheet_day = client.create(f'day{day_num}')
-    worksheet_day = spreadsheet_day.get_worksheet(0)
+    duration_script_before_sheets = float((datetime.now() - start_time).seconds)
+    print(f"{int(duration_script_before_sheets // 60)} min {int(duration_script_before_sheets % 60)} sec")
+    worksheet_day = spreadsheet.add_worksheet(str(day_num), 1000, 10)
+
+    # worksheet_day.update_title()t = f"day{day_num}"
     data = []
-    for lesson in lessons["complete"]["ind50"]:
-        list_info = [lesson.time_start, lesson.time_end, lesson.name]
-        data.append(list_info)
-    spreadsheet_day.share("razmanov666@gmail.com", role="writer", perm_type="user")
+    for type_les, d in lessons_per_days[str(day_num)]["complete"].items():
+        data.append([type_les]) if lessons_per_days[str(day_num)]["complete"][type_les] else 0
+        for lesson in lessons_per_days[str(day_num)]["complete"][type_les]:
+            list_info = [lesson.date, f"{lesson.time_start} - {lesson.time_end}", lesson.name, lesson.is_abon]
+            data.append(list_info)
+        data.append([])
 
     worksheet_day.insert_rows(data)
 
@@ -218,6 +281,11 @@ def create_new_user(id_user):
     return User(id_user, title, link_user, data)
 
 
+def get_current_user(id: int):
+    with open("user_data.json", "r", encoding="UTF-8") as file:
+        return User(id=id, **json.load(file)[str(id)])
+
+
 def add_lesson(path, les: Lesson):
     global lessons
     eval(path).append(les)
@@ -228,7 +296,8 @@ def get_data_lesson(date, div):
         is_abon = 1 if div.find_elements(By.TAG_NAME, "span")[2].text == "абон" else 0
         name = div.find_element(By.CLASS_NAME, "customer-name").text
         link_user = div.find_element(By.CLASS_NAME, "col-sm-12").find_element(By.TAG_NAME, "a").get_attribute("href")
-        id_user = link_user[-5:]
+        matches = re.findall(r'=(.*?)(?=\=|$)', link_user)
+        id_user = matches[-1] if matches else None
     except IndexError or NoSuchElementException:
         is_abon = 0
         name = ''
@@ -259,4 +328,4 @@ if __name__ == "__main__":
     nav = get_nav_buttons()
     collect_month_lesson()
     duration_script = float((datetime.now() - start_time).seconds)
-    print(f"{duration_script // 60} min {duration_script % 60} sec")
+    print(f"{int(duration_script // 60)} min {int(duration_script % 60)} sec")

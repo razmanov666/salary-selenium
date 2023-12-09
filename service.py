@@ -46,10 +46,10 @@ class Lesson:
 
 
 class User:
-    def __init__(self, id, title, link_user, data):
+    def __init__(self, id, title, link, data):
         self.id = id
         self.title = title
-        self.link_user = link_user
+        self.link = link
         self.data = data
         print("Created a new user!")
 
@@ -66,5 +66,11 @@ class User:
         return f"{self.id}\n" \
                f"{self.title}\n" \
                f"{self.data['Курс']}\n"
+
+    def __dict__(self):
+        return {"id": self.id,
+                "title": self.title,
+                "link": self.link,
+                "data": self.data}
 
 
