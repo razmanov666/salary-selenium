@@ -1,5 +1,5 @@
 class Nav:
-    def __init__(self, month, day, week, prev, next, today):
+    def __init__(self, month=None, day=None, week=None, prev=None, next=None, today=None):
         self.attr_month = month
         self.attr_day = day
         self.attr_week = week
@@ -51,7 +51,6 @@ class User:
         self.title = title
         self.link = link
         self.data = data
-        print("Created a new user!")
 
     def time_lesson(self):
         return self.data["N группы"].strip()[-2:]
